@@ -1,0 +1,2143 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "C:/Users/austi/OneDrive/Ecotoxicology Lab/SERDP iTIE/Trident Drawdown/tridentdrawdown")
+getwd()
+```
+
+```{r}
+# Call packages
+
+library(tidyverse)
+library(tibble)
+library(broom)
+library(readxl)
+library(ggpubr)
+library(caret)
+library(data.table)
+library(propagate)
+```
+
+```{r}
+# Names of sheets in excel file
+sheet_names <- excel_sheets("TridentDD_data (1).xlsx")
+```
+
+# Exponential decay fit + predictive model
+
+## Sand Run 4
+```{r}
+# # Import Sand Run 4 and clean dataset
+# 
+# sand_run4 <- read_excel("TridentDD_data (1).xlsx",
+#                         sheet = "Run4_Sand_Trident",
+#                         range = "B3:M24")
+# colnames(sand_run4) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+#                          "nm430", "nm460", "nm490", "nm520", "nm550",
+#                          "nm580", "nm610")
+# 
+# sand_run4_t <- transpose(sand_run4)
+# colnames(sand_run4_t) <- sand_run4_t[1,]
+# sand_run4_t <- sand_run4_t %>%
+#   slice(2:12)
+# 
+# wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+# 
+# sand_run4_t <- cbind(wavelength = wavelengths,
+#                      sand_run4_t)
+# 
+# colnames(sand_run4_t)[10:18] <- c("Hour16",
+#                                   "Hour17",
+#                                   "Hour18",
+#                                   "Hour19",
+#                                   "Hour20",
+#                                   "Hour21",
+#                                   "Hour22",
+#                                   "Hour23",
+#                                   "Hour24")
+# 
+# sand_run4_t <- sand_run4_t %>%
+#   mutate_if(is.character, as.numeric) %>%
+#   dplyr::select(-FW_Pre, -FW_Post)
+# 
+# ## Subset Sand Run 4 Points in nls fit
+# sandrun4_fit_datapoints <- sand_run4_t %>% slice(3:4, 9:11)
+# 
+# ## Subset Sand Run 4 points not in nls fit
+# sandrun4_nonfit <- sand_run4_t %>% slice(5:8)
+```
+
+```{r}
+# sand_run4_results <- data.frame(sample = sand_run4$sample[c(2:4, 6:20)],
+#                                 obs_490 = sand_run4$nm490[c(2:4, 6:20)],
+#                                 pred_490_mean_Taylor = NA,
+#                                 pred_490_upr_Taylor = NA,
+#                                 residual_Taylor = NA,
+#                                 p_value = NA,
+#                                 drawdown = NA)
+# 
+# #Nonlinear self-starting function - exponential decay curve fit to data
+# 
+# c.0 <- min(sandrun4_fit_datapoints$SW_Pre_2) * 0.5
+# model.0 <- lm(log(SW_Pre_2 - c.0) ~ wavelength, data=sandrun4_fit_datapoints)
+# start <- list(a=exp(coef(model.0)[1]), b=coef(model.0)[2], c=c.0)
+# model <- nls(SW_Pre_2 ~ a * exp(b * wavelength) + c, 
+#              data = sandrun4_fit_datapoints, 
+#              start = start,
+#              control = nls.control(maxiter = 100000,
+#                                    minFactor = 1/1000000000))
+# 
+# dye_conc_pred <- predictNLS(model,
+#                          newdata = data.frame(wavelength = 490),
+#                          interval = "prediction",
+#                          alpha = 0.10)
+# 
+# # sand_run4_results$pred_490_mean_Taylor[17] <- dye_conc_pred$summary$Prop.Mean.1
+# # sand_run4_results$pred_490_upr_Taylor[17] <- dye_conc_pred$summary$`Prop.95%`
+# # sand_run4_results$residual_Taylor[17] <- sand_run4_results$obs_490[2] - sand_run4_results$pred_490_mean_Taylor[2]
+
+```
+
+
+```{r}
+# plot_archive <- list()
+# 
+# # Plot the data points 370-610nm, with interior points different color, and exponential fit
+# plot_archive$SW_Pre_2 <- ggplot() +
+#   geom_point(data = sandrun4_fit_datapoints, 
+#              aes(x = wavelength, y = SW_Pre_2)) +
+#   geom_point(data = sandrun4_nonfit, 
+#              aes(x = wavelength, y = SW_Pre_2),
+#              pch = 1) +
+#   geom_function(data = sandrun4_fit_datapoints, 
+#                 aes(x = wavelength, y = SW_Pre_2),
+#                 fun = function(x) {
+#                   predict(model, 
+#                           newdata = data.frame(wavelength = x),
+#                           interval = "prediction")
+#                   },
+#                 colour = "red",
+#                 ) + 
+#   scale_x_continuous(trans = "log10") +
+#   labs(
+#     title = "SW_Pre_2",
+#     x = "Wavelength (nm)",
+#     y = "Absorbance (AU)"
+#   ) +
+#   theme_bw()
+# 
+# print(plot_archive$SW_Pre_2)
+```
+
+
+```{r}
+# # Initialize data frame to hold results
+# sand_run4_results <- data.frame(sample = sand_run4$sample[c(2:4, 6:20)],
+#                                 obs_490 = sand_run4$nm490[c(2:4, 6:20)],
+#                                 pred_490_mean_Taylor = NA,
+#                                 pred_490_upr_Taylor = NA,
+#                                 residual_Taylor = NA,
+#                                 p_value = NA,
+#                                 drawdown = NA)
+# 
+# 
+# for (i in 1:nrow(sand_run4_results)) {
+#   try( {
+#   x <- sandrun4_fit_datapoints$wavelength
+#   y <- sandrun4_fit_datapoints[[i+2]]
+#   column_name <- colnames(sandrun4_fit_datapoints)[i+2]
+#   
+#   # Creating exponential decay predictive model
+#   c.0 <- min(y) * 0.5
+#   model.0 <- lm(log(y - c.0) ~ x)
+#   start <- list(a=exp(coef(model.0)[1]), b=coef(model.0)[2])
+#   model <- nls(y ~ a * exp(b * x), 
+#                         start = start,
+#                         control = nls.control(maxiter = 100000,
+#                                               minFactor = 1/100000000000))
+#   
+#   dye_conc_pred <- predictNLS(model,
+#                          newdata = data.frame(x = 490),
+#                          interval = "prediction",
+#                          alpha = 0.10)
+# 
+#   sand_run4_results$pred_490_mean_Taylor[i] <- dye_conc_pred$summary$Prop.Mean.1
+#   sand_run4_results$pred_490_upr_Taylor[i] <- dye_conc_pred$summary$`Prop.95%`
+#   sand_run4_results$residual_Taylor[i] <- sand_run4_results$obs_490[i] - sand_run4_results$pred_490_mean_Taylor[i]
+#   }, silent = F)
+#   
+#   # Comparing observed 490nm abs with modeled 490nm abs
+#   if (sand_run4_results$obs_490[i] < sand_run4_results$pred_490_upr_Taylor[i]) {
+#     sand_run4_results$drawdown[i] <- F
+#   } else {
+#     sand_run4_results$drawdown[i] <- T
+#   }
+# }
+
+```
+
+```{r}
+# # Plotting in a loop, saving in a list "plot_archive"
+# 
+# for (i in 1:nrow(sand_run4_results)) { 
+#   plot_archive[[i]] <- ggplot() +
+#     geom_point(data = sandrun4_fit_datapoints, 
+#                aes(x = wavelength, y = colnames(sandrun4_fit_datapoints)[i+2])) +
+#     geom_point(data = sandrun4_nonfit, 
+#                aes(x = wavelength, y = colnames(sandrun4_fit_datapoints)[i+2]),
+#                pch = 1) +
+#     geom_function(data = sandrun4_fit_datapoints, 
+#                   aes(x = wavelength, y = colnames(sandrun4_fit_datapoints)[i+2]),
+#                   fun = function(x) {
+#                     predict(model, 
+#                             newdata = data.frame(wavelength = x),
+#                             interval = "prediction")
+#                     },
+#                   colour = "red",
+#                   ) + 
+#     scale_x_continuous(trans = "log10") +
+#     labs(
+#       title = "PW_Pre_2",
+#       x = "Wavelength (nm)",
+#       y = "Absorbance (AU)"
+#     ) +
+#     theme_bw()
+# }
+```
+
+
+
+
+
+## Sand Run 5
+```{r}
+# # Import Sand Run 5 and clean dataset
+# 
+# sand_run5 <- read_excel("TridentDD_data (1).xlsx",
+#                         sheet = "Run5_Sand_StopperAdjust(3in)",
+#                         range = "A1:L22")
+# colnames(sand_run5) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+#                          "nm430", "nm460", "nm490", "nm520", "nm550",
+#                          "nm580", "nm610")
+# 
+# sand_run5_t <- transpose(sand_run5)
+# colnames(sand_run5_t) <- sand_run5_t[1,]
+# sand_run5_t <- sand_run5_t %>%
+#   slice(2:12)
+# 
+# wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+# 
+# sand_run5_t <- cbind(wavelength = wavelengths,
+#                      sand_run5_t)
+# 
+# colnames(sand_run5_t)[10:18] <- c("Hour16",
+#                                   "Hour17",
+#                                   "Hour18",
+#                                   "Hour19",
+#                                   "Hour20",
+#                                   "Hour21",
+#                                   "Hour22",
+#                                   "Hour23",
+#                                   "Hour24")
+# 
+# sand_run5_t <- sand_run5_t %>%
+#   mutate_if(is.character, as.numeric) %>%
+#   dplyr::select(-FW_Pre, -FW_Post)
+# 
+# sand_run5_t[sand_run5_t<=0] <- 0.000001
+# 
+# ## Subset Sand Run 5 Points in nls fit
+# sandrun5_fit_datapoints <- sand_run5_t %>% slice(3:4, 9:11)
+# 
+# ## Subset Sand Run 5 points not in nls fit
+# sandrun5_nonfit <- sand_run5_t %>% slice(5:8)
+```
+
+```{r}
+# # Initialize data frame to hold results
+# sand_run5_results <- data.frame(sample = sand_run5$sample[c(2:4, 6:20)],
+#                                 obs_490 = sand_run5$nm490[c(2:4, 6:20)],
+#                                 pred_490_mean_Taylor = NA,
+#                                 pred_490_upr_Taylor = NA,
+#                                 residual_Taylor = NA,
+#                                 p_value = NA,
+#                                 drawdown = NA)
+# plot_archive <- list()
+# 
+# for (i in 1:nrow(sand_run5_results)) {
+#   try( {
+#   x <- sandrun5_fit_datapoints$wavelength
+#   y <- sandrun5_fit_datapoints[[i+2]]
+#   column_name <- colnames(sandrun5_fit_datapoints)[i+2]
+#   
+#   # Creating exponential decay predictive model
+#   c.0 <- min(y) * 0.5
+#   model.0 <- lm(log(y - c.0) ~ x)
+#   start <- list(a=exp(coef(model.0)[1]), b=coef(model.0)[2])
+#   model <- nls(y ~ a * exp(b * x), 
+#                         start = start,
+#                         control = nls.control(maxiter = 1000000,
+#                                               minFactor = 1/10000000000000))
+#   
+#   dye_conc_pred <- predictNLS(model,
+#                          newdata = data.frame(x = 490),
+#                          interval = "prediction",
+#                          alpha = 0.10)
+# 
+#   sand_run5_results$pred_490_mean_Taylor[i] <- dye_conc_pred$summary$Prop.Mean.1
+#   sand_run5_results$pred_490_upr_Taylor[i] <- dye_conc_pred$summary$`Prop.95%`
+#   sand_run5_results$residual_Taylor[i] <- sand_run5_results$obs_490[i] - sand_run5_results$pred_490_mean_Taylor[i]
+#   
+#   
+#   # Comparing observed 490nm abs with modeled 490nm abs
+#   if (sand_run5_results$obs_490[i] < sand_run5_results$pred_490_upr_Taylor[i]) {
+#     sand_run5_results$drawdown[i] <- F
+#   } else {
+#     sand_run5_results$drawdown[i] <- T
+#   }
+#   }, silent = F)
+# }
+
+```
+```{r}
+# c.0 <- min(sandrun5_fit_datapoints$Hour21) * 0.5
+# model.0 <- lm(log(Hour21 - c.0) ~ wavelength, data=sandrun5_fit_datapoints)
+# start <- list(a=exp(coef(model.0)[1]), b=coef(model.0)[2], c=c.0)
+# model <- nls(Hour21 ~ a * exp(b * wavelength) + c, 
+#              data = sandrun5_fit_datapoints, 
+#              start = start,
+#              control = nls.control(maxiter = 200))
+# 
+# dye_conc_pred <- predictNLS(model,
+#                          newdata = data.frame(wavelength = 490),
+#                          interval = "prediction",
+#                          alpha = 0.10)
+```
+
+
+
+
+# Polynomial fits including interior points
+
+## Sand Run 4
+```{r}
+# Import Sand Run 4 and clean dataset
+
+sand_run4 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run4_Sand_Trident",
+                        range = "B3:M24")
+colnames(sand_run4) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run4_t <- transpose(sand_run4)
+colnames(sand_run4_t) <- sand_run4_t[1,]
+sand_run4_t <- sand_run4_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run4_t <- cbind(wavelength = wavelengths,
+                     sand_run4_t)
+
+colnames(sand_run4_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run4_t <- sand_run4_t %>%
+  mutate_if(is.character, as.numeric)
+```
+```{r}
+x <- sand_run4_t$wavelength
+y <- sand_run4_t[[3]]
+
+fit3_poly <- lm(y~poly(x,3, raw=T))
+summary_fit3 <- summary(fit3_poly)
+```
+
+
+```{r}
+# Initialize data frame to hold results
+sand_run4_results <- data.frame(sample = sand_run4$sample[2:21],
+                                p_value = NA,
+                                drawdown = NA)
+
+
+for (i in 1:nrow(sand_run4_results)) {
+  x <- sand_run4_t$wavelength
+  y <- sand_run4_t[[i+2]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  anova_fit3_poly <- anova(fit3_poly)
+  sand_run4_results$p_value[i] <- anova_fit3_poly$`Pr(>F)`[1]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run4_results$p_value[i] < 0.05) {
+    sand_run4_results$drawdown[i] <- F
+  } else {
+    sand_run4_results$drawdown[i] <- T
+  }
+}
+```
+
+## Sand Run 5
+```{r}
+# Import Sand Run 5 and clean dataset
+
+sand_run5 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run5_Sand_StopperAdjust(3in)",
+                        range = "A1:L22")
+colnames(sand_run5) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run5_t <- transpose(sand_run5)
+colnames(sand_run5_t) <- sand_run5_t[1,]
+sand_run5_t <- sand_run5_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run5_t <- cbind(wavelength = wavelengths,
+                     sand_run5_t)
+
+colnames(sand_run5_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run5_t <- sand_run5_t %>%
+  mutate_if(is.character, as.numeric)
+```
+
+```{r}
+# Initialize data frame to hold results
+sand_run5_results <- data.frame(sample = sand_run5$sample[2:21],
+                                p_value = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(sand_run5_results)) {
+  x <- sand_run5_t$wavelength
+  y <- sand_run5_t[[i+2]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  anova_fit3_poly <- anova(fit3_poly)
+  sand_run5_results$p_value[i] <- anova_fit3_poly$`Pr(>F)`[1]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run5_results$p_value[i] < 0.05) {
+    sand_run5_results$drawdown[i] <- F
+  } else {
+    sand_run5_results$drawdown[i] <- T
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+```{r}
+lm_interior_sand_run5 <- lm(FW_Pre~poly(wavelength,3, raw=T), data = sand_run5_t)
+anova_lm_sand_run5 <- anova(lm_interior_sand_run5)
+
+ggplot(data=)
+```
+
+
+
+```{r}
+plot1 <- ggplot() +
+  geom_point(data=sand_run5_t, mapping = aes(x=wavelength,
+                                               y=PW_Pre_1)) + #adding point
+  stat_smooth(data=sand_run5_t, mapping = aes(x=wavelength,
+                                               y=PW_Pre_1),
+                                               method = "lm",
+              formula = y ~ x + I(x^2), size = .5, color="#07BBC1") +#adding quad regression
+  labs(y = "Absorbance", x = "Wavelength (nm)") + # rename axes
+  ggtitle('Absorbance Regression of SW_Pre_1 Sample') +
+  geom_point(mapping = aes(y=0.344, x=490))+ ##adding in the 490 point manually with the observed abs. Changes the graph a lot because this is a Surface Water sample w/dye
+  geom_boxplot(data=Run5_dd_predictions, mapping= aes(ymin=dd_lower[6,], ymax=dd_upper[6,])) #trying to specify the singular row from the sample we're using. Does NOT work so far.
+```
+
+
+
+
+
+# Poly fits excluding interior points
+
+## Sand Run 3: 2 inch breakthru depth, first run
+```{r}
+# Import Sand Run 3 and clean dataset
+
+sand_run3 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run3_halfinch",
+                        range = "A1:L20")
+colnames(sand_run3) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run3_t <- transpose(sand_run3)
+colnames(sand_run3_t) <- sand_run3_t[1,]
+sand_run3_t <- sand_run3_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run3_t <- cbind(wavelength = wavelengths,
+                     sand_run3_t)
+
+colnames(sand_run3_t)[9:16] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run3_t <- sand_run3_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 3 Points
+sandrun3_fit_datapoints <- sand_run3_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 3 Points not in lm
+sandrun3_nonfit <- sand_run3_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+sand_run3_results <- data.frame(sample = sand_run3$sample,
+                                obs_490 = sand_run3$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(sand_run3_results)) {
+  x <- sandrun3_fit_datapoints$wavelength
+  y <- sandrun3_fit_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  sand_run3_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  sand_run3_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run3_results$obs_490[i] > sand_run3_results$pred_490_upr[i]) {
+    sand_run3_results$drawdown[i] <- T
+  } else {
+    sand_run3_results$drawdown[i] <- F
+  }
+}
+```
+
+## Sand Run 5: 3 inch breakthru depth, first run
+```{r}
+# Import Sand Run 5 and clean dataset
+
+sand_run5 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run5_Sand_StopperAdjust(3in)",
+                        range = "A1:L22")
+colnames(sand_run5) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run5_t <- transpose(sand_run5)
+colnames(sand_run5_t) <- sand_run5_t[1,]
+sand_run5_t <- sand_run5_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run5_t <- cbind(wavelength = wavelengths,
+                     sand_run5_t)
+
+colnames(sand_run5_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run5_t <- sand_run5_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 5 Points
+sandrun5_fit_datapoints <- sand_run5_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 3 Points not in lm
+sandrun5_nonfit <- sand_run5_t %>% slice(4:8)
+```
+
+```{r}
+# Polynomial fits for Sand Run 5 PW_Pre_1
+
+## Extract Surface Water Pre-Run Sample 1 as X and Y
+## Calculate x^2, x^3, x^4 to simplify code
+x <- sandrun5_fit_datapoints$wavelength
+y <- sandrun5_fit_datapoints$PW_Pre_1
+xsq <- x^2
+xcub <- x^3
+xquad <- x^4
+
+# Plot points as scatterplot
+plot(x,y, pch=19, 
+     main="Absorbance Regression for FW_Pre Sample",  
+     xlab="Wavelength in nm",
+     ylab ="Absorbance")
+
+## Linear fit
+fit1 <- lm(y~x)
+anova(fit1)
+abline(fit1, col="red")
+
+## Quadratic fit
+fit2 <-lm(y~x+xsq)
+anova(fit2)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit2, list(x=xv, xsq= xv^2))
+lines(xv,yv, col="green")
+
+## Cubic fit
+fit3 <- lm(y~x+xsq+xcub)
+anova(fit3)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit3, list(x=xv, xsq=xv^2, xcub=xv^3))
+lines(xv, yv, col="blue")
+
+## 4th order fit
+fit4 <- lm(y~x+xsq+xcub+xquad)
+anova(fit4)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit4, list(x=xv, xsq=xv^2, xcub=xv^3, xquad=xv^4))
+lines(xv, yv, col="orange")
+
+## Third order fit seems best. All coefficients are significant
+```
+
+```{r}
+# Initialize data frame to hold results
+sand_run5_results <- data.frame(sample = sand_run5$sample,
+                                obs_490 = sand_run5$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(sand_run5_results)) {
+  x <- sandrun5_fit_datapoints$wavelength
+  y <- sandrun5_fit_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  sand_run5_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  sand_run5_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run5_results$obs_490[i] > sand_run5_results$pred_490_upr[i]) {
+    sand_run5_results$drawdown[i] <- T
+  } else {
+    sand_run5_results$drawdown[i] <- F
+  }
+}
+```
+
+## Sand Run 4: 2 inch breakthru depth, first run
+```{r}
+# Import Sand Run 4 and clean dataset
+
+sand_run4 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run4_Sand_Trident",
+                        range = "B3:M24")
+colnames(sand_run4) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run4_t <- transpose(sand_run4)
+colnames(sand_run4_t) <- sand_run4_t[1,]
+sand_run4_t <- sand_run4_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run4_t <- cbind(wavelength = wavelengths,
+                     sand_run4_t)
+
+colnames(sand_run4_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run4_t <- sand_run4_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 4 Points
+sandrun4_fit_datapoints <- sand_run4_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 4 Points not in lm
+sandrun4_nonfit <- sand_run4_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+sand_run4_results <- data.frame(sample = sand_run4$sample,
+                                obs_490 = sand_run4$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(sand_run4_results)) {
+  x <- sandrun4_fit_datapoints$wavelength
+  y <- sandrun4_fit_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  sand_run4_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  sand_run4_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run4_results$obs_490[i] > sand_run4_results$pred_490_upr[i]) {
+    sand_run4_results$drawdown[i] <- T
+  } else {
+    sand_run4_results$drawdown[i] <- F
+  }
+}
+```
+
+## Sand Run 6: 3 inch breakthru depth, second run
+
+```{r}
+# Import Sand Run 6 and clean dataset
+
+sand_run6 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "Run6_Sand_StopperAdjust(3in)",
+                        range = "A1:L22")
+colnames(sand_run6) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+sand_run6_t <- transpose(sand_run6)
+colnames(sand_run6_t) <- sand_run6_t[1,]
+sand_run6_t <- sand_run6_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+sand_run6_t <- cbind(wavelength = wavelengths,
+                     sand_run6_t)
+
+colnames(sand_run6_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+sand_run6_t <- sand_run6_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 6 Points
+sandrun6_fit_datapoints <- sand_run6_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 6 Points not in lm
+sandrun6_nonfit <- sand_run6_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+sand_run6_results <- data.frame(sample = sand_run6$sample,
+                                obs_490 = sand_run6$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(sand_run6_results)) {
+  x <- sandrun6_fit_datapoints$wavelength
+  y <- sandrun6_fit_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,3, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  sand_run6_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  sand_run6_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (sand_run6_results$obs_490[i] > sand_run6_results$pred_490_upr[i]) {
+    sand_run6_results$drawdown[i] <- T
+  } else {
+    sand_run6_results$drawdown[i] <- F
+  }
+}
+```
+
+## Saginaw Forest Sediment 1: 2 inch breakthru depth, first run
+
+```{r}
+# Import SF Run 1 and clean dataset
+
+SF_run1 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "SF_Run1(2in)",
+                        range = "A1:L22")
+colnames(SF_run1) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+SF_run1_t <- transpose(SF_run1)
+colnames(SF_run1_t) <- SF_run1_t[1,]
+SF_run1_t <- SF_run1_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+SF_run1_t <- cbind(wavelength = wavelengths,
+                     SF_run1_t)
+
+colnames(SF_run1_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+SF_run1_t <- SF_run1_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 5 Points
+SF_run1_datapoints <- SF_run1_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 3 Points not in lm
+SF_run1_nonfit <- SF_run1_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+SF_run1_results <- data.frame(sample = SF_run1$sample,
+                                obs_490 = SF_run1$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(SF_run1_results)) {
+  x <- SF_run1_datapoints$wavelength
+  y <- SF_run1_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,4, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  SF_run1_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  SF_run1_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (SF_run1_results$obs_490[i] > SF_run1_results$pred_490_upr[i]) {
+    SF_run1_results$drawdown[i] <- T
+  } else {
+    SF_run1_results$drawdown[i] <- F
+  }
+}
+```
+
+## Saginaw Forest Sediment 2: 3 inch breakthru depth, first run
+
+```{r}
+# Import SF Run 2 and clean dataset
+
+SF_run2 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "SF_Run2(3in)",
+                        range = "A1:L22")
+colnames(SF_run2) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+SF_run2_t <- transpose(SF_run2)
+colnames(SF_run2_t) <- SF_run2_t[1,]
+SF_run2_t <- SF_run2_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+SF_run2_t <- cbind(wavelength = wavelengths,
+                     SF_run2_t)
+
+colnames(SF_run2_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+SF_run2_t <- SF_run2_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 5 Points
+SF_run2_datapoints <- SF_run2_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 3 Points not in lm
+SF_run2_nonfit <- SF_run2_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+SF_run2_results <- data.frame(sample = SF_run2$sample,
+                                obs_490 = SF_run2$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(SF_run2_results)) {
+  x <- SF_run2_datapoints$wavelength
+  y <- SF_run2_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,4, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  SF_run2_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  SF_run2_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (SF_run2_results$obs_490[i] > SF_run2_results$pred_490_upr[i]) {
+    SF_run2_results$drawdown[i] <- T
+  } else {
+    SF_run2_results$drawdown[i] <- F
+  }
+}
+```
+
+## Saginaw Forest Sediment 3: 3 inch breakthru depth, second run
+
+```{r}
+# Import SF Run 3 and clean dataset
+
+SF_run3 <- read_excel("TridentDD_data (1).xlsx",
+                        sheet = "SF_Run3(3in)",
+                        range = "A1:L22")
+colnames(SF_run3) <- c("sample", "nm310", "nm340", "nm370", "nm400",
+                         "nm430", "nm460", "nm490", "nm520", "nm550",
+                         "nm580", "nm610")
+
+SF_run3_t <- transpose(SF_run3)
+colnames(SF_run3_t) <- SF_run3_t[1,]
+SF_run3_t <- SF_run3_t %>%
+  slice(2:12)
+
+wavelengths <- c(310, 340, 370, 400, 430, 460, 490, 520, 550, 580, 610)
+
+SF_run3_t <- cbind(wavelength = wavelengths,
+                     SF_run3_t)
+
+colnames(SF_run3_t)[10:18] <- c("Hour16",
+                                  "Hour17",
+                                  "Hour18",
+                                  "Hour19",
+                                  "Hour20",
+                                  "Hour21",
+                                  "Hour22",
+                                  "Hour23",
+                                  "Hour24")
+
+SF_run3_t <- SF_run3_t %>%
+  mutate_if(is.character, as.numeric)
+
+## Subset Sand Run 5 Points
+SF_run3_datapoints <- SF_run3_t %>% slice(1:3, 9:11)
+
+## Subset Sand Run 3 Points not in lm
+SF_run3_nonfit <- SF_run3_t %>% slice(4:8)
+```
+
+```{r}
+# Initialize data frame to hold results
+SF_run3_results <- data.frame(sample = SF_run3$sample,
+                                obs_490 = SF_run3$nm490,
+                                pred_490_fit = NA,
+                                pred_490_upr = NA,
+                                drawdown = NA)
+
+for (i in 1:nrow(SF_run3_results)) {
+  x <- SF_run3_datapoints$wavelength
+  y <- SF_run3_datapoints[[i+1]]
+  
+  # Creating cubic regression model for PW_Pre_1
+  fit3_poly <- lm(y~poly(x,4, raw=T))
+  
+  # Calculating 490nm absorbance prediction using model
+  dye_conc_pred <- predict(fit3_poly,
+                           newdata = data.frame(x = 490),
+                           interval = "prediction",
+                           level = 0.95)
+  SF_run3_results$pred_490_fit[i] <- dye_conc_pred[1,1]
+  SF_run3_results$pred_490_upr[i] <- dye_conc_pred[1,3]
+
+# Comparing observed 490nm abs with modeled 490nm abs
+  if (SF_run3_results$obs_490[i] > SF_run3_results$pred_490_upr[i]) {
+    SF_run3_results$drawdown[i] <- T
+  } else {
+    SF_run3_results$drawdown[i] <- F
+  }
+}
+```
+
+
+# Plots to visualize
+
+```{r}
+plot_archive <- list()
+```
+
+
+## Sand Run 4, SW_Pre_1
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+sandrun4_lm_SW_Pre_1 <- lm(SW_Pre_1~poly(wavelength,3, raw=T), data = sandrun4_fit_datapoints)
+
+plot_archive$sandrun4_SW_Pre_1 <- ggplot() +
+  geom_point(data = sandrun4_fit_datapoints, 
+             aes(x = wavelength, y = SW_Pre_1)) +
+  geom_point(data = sandrun4_nonfit, 
+             aes(x = wavelength, y = SW_Pre_1),
+             pch = 1) +
+  geom_smooth(data = sandrun4_fit_datapoints,
+            aes(x = wavelength, y = SW_Pre_1),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) +  
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Surface Water w/ Fluorescein Dye",
+    subtitle = "Sand, 2 inch Sampling Depth, Run 2, Pre-Run Sample 1",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$sandrun4_SW_Pre_1
+
+ggsave(filename = "SandRun4_SW_Pre_1_poly.png",
+       plot = plot_archive$sandrun4_SW_Pre_1,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$sandrun4_SW_Pre_1)
+```
+
+## Sand Run 4, PW_Pre_1
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+sandrun4_lm_PW_Pre_1 <- lm(PW_Pre_1~poly(wavelength,3, raw=T), data = sandrun4_fit_datapoints)
+
+plot_archive$sandrun4_PW_Pre_1 <- ggplot() +
+  geom_point(data = sandrun4_fit_datapoints, 
+             aes(x = wavelength, y = PW_Pre_1)) +
+  geom_point(data = sandrun4_nonfit, 
+             aes(x = wavelength, y = PW_Pre_1),
+             pch = 1) +
+  geom_smooth(data = sandrun4_fit_datapoints,
+            aes(x = wavelength, y = PW_Pre_1),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Pore Water Absorbance Pattern",
+    subtitle = "Sand, 2 inch Sampling Depth, Run 2, Pre-Run Sample 1",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$sandrun4_PW_Pre_1
+
+ggsave(filename = "SandRun4_PW_Pre_1_poly.png",
+       plot = plot_archive$sandrun4_PW_Pre_1,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$sandrun4_PW_Pre_1)
+```
+
+## Sand Run 4, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+sandrun4_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = sandrun4_fit_datapoints)
+
+plot_archive$sandrun4_Hour24 <- ggplot() +
+  geom_point(data = sandrun4_fit_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = sandrun4_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = sandrun4_fit_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Sand, 2 inch Sampling Depth, with Surface Water Drawdown",
+    subtitle = "Run 2, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$sandrun4_Hour24
+
+ggsave(filename = "SandRun4_Hour24_poly.png",
+       plot = plot_archive$sandrun4_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$sandrun4_Hour24)
+```
+
+## Sand Run 3, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+sandrun3_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = sandrun3_fit_datapoints)
+
+plot_archive$sandrun3_Hour24<- ggplot() +
+  geom_point(data = sandrun3_fit_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = sandrun3_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = sandrun3_fit_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Sand, 2 inch Sampling Depth, with Surface Water Drawdown",
+    subtitle = "Run 1, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$sandrun3_Hour24
+
+ggsave(filename = "SandRun3_Hour24_poly.png",
+       plot = plot_archive$sandrun3_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$sandrun3_Hour24)
+```
+
+## Sand Run 5, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+sandrun5_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = sandrun5_fit_datapoints)
+
+plot_archive$sandrun5_Hour24<- ggplot() +
+  geom_point(data = sandrun5_fit_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = sandrun5_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = sandrun5_fit_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Sand, 3 inch Sampling Depth, No Surface Water Drawdown",
+    subtitle = "Run 1, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$sandrun5_Hour24
+
+ggsave(filename = "SandRun5_Hour24_poly.png",
+       plot = plot_archive$sandrun5_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$sandrun5_Hour24)
+```
+## SF Run 1, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+SF1_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = SF_run1_datapoints)
+
+plot_archive$SF1_Hour24<- ggplot() +
+  geom_point(data = SF_run1_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = SF_run1_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = SF_run1_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Saginaw Forest, 2 inch Sampling Depth, with Drawdown",
+    subtitle = "Run 1, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$SF1_Hour24
+
+ggsave(filename = "SF1_Hour24_poly.png",
+       plot = plot_archive$SF1_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$SF1_Hour24)
+```
+
+## SF Run 2, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+SF2_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = SF_run2_datapoints)
+
+plot_archive$SF2_Hour24<- ggplot() +
+  geom_point(data = SF_run2_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = SF_run2_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = SF_run2_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Saginaw Forest, 3 inch Sampling Depth, No Drawdown",
+    subtitle = "Run 1, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$SF2_Hour24
+
+ggsave(filename = "SF2_Hour24_poly.png",
+       plot = plot_archive$SF2_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$SF2_Hour24)
+```
+
+## SF Run 3, 24 Hour
+```{r}
+# Plot the data points 370-610nm, with interior points different color, and exponential fit
+
+SF3_lm_Hour24 <- lm(Hour24~poly(wavelength,3, raw=T), data = SF_run3_datapoints)
+
+plot_archive$SF3_Hour24<- ggplot() +
+  geom_point(data = SF_run3_datapoints, 
+             aes(x = wavelength, y = Hour24)) +
+  geom_point(data = SF_run3_nonfit, 
+             aes(x = wavelength, y = Hour24),
+             pch = 1) +
+  geom_smooth(data = SF_run3_datapoints,
+            aes(x = wavelength, y = Hour24),
+            method = "lm",
+            formula = y ~ poly(x, 3, raw=TRUE),
+            colour = "red",
+                ) + 
+  scale_x_continuous(trans = "log10") +
+  labs(
+    title = "Saginaw Forest, 3 inch Sampling Depth, No Drawdown",
+    subtitle = "Run 2, Sample at 24 Hours",
+    x = "Wavelength (nm)",
+    y = "Absorbance (AU)"
+  ) +
+  theme_bw()#base_size = 20)
+
+plot_archive$SF3_Hour24
+
+ggsave(filename = "SF3_Hour24_poly.png",
+       plot = plot_archive$SF3_Hour24,
+       device = "png",
+       width = 5000, height = 3500, units = "px", dpi = 800)
+
+print(plot_archive$SF3_Hour24)
+```
+
+
+```{r}
+# Polynomial fits for Sand Run 5 PW_Pre_1
+
+## Extract Surface Water Pre-Run Sample 1 as X and Y
+## Calculate x^2, x^3, x^4 to simplify code
+x <- sand_run4_t$wavelength
+y <- sand_run4_t$Hour24
+xsq <- x^2
+xcub <- x^3
+xquad <- x^4
+
+# Plot points as scatterplot
+plot(x = sand_run4_t$wavelength,
+     y = sand_run4_t$Hour24, pch=19,  
+     xlab="Wavelength in nm",
+     ylab ="Absorbance")
+
+## Linear fit
+fit1 <- lm(y~x)
+anova(fit1)
+abline(fit1, col="red")
+
+## Quadratic fit
+fit2 <-lm(y~poly(x,2, raw=T))
+anova(fit2)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit2, list(x=xv, xsq= xv^2))
+lines(xv,yv, col="green")
+
+## Cubic fit
+fit3 <- lm(y~poly(x,3, raw=T))
+anova(fit3)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit3, list(x=xv, xsq=xv^2, xcub=xv^3))
+lines(xv, yv, col="blue")
+
+## 4th order fit
+fit4 <- lm(y~poly(x,4, raw=T))
+anova(fit4)
+xv<- seq(min(x),max(x),30)
+yv<- predict(fit4, list(x=xv, xsq=xv^2, xcub=xv^3, xquad=xv^4))
+lines(xv, yv, col="orange")
+
+## Third order fit seems best. All coefficients are significant
+```
+
+
+
+
+
+
+```{r}
+# # Creating cubic regression model for PW_Pre_1
+# fit3_poly <- lm(SW_Post_1~poly(wavelength,3,raw=T), data=sandrun5_fit_datapoints)
+# 
+# # Calculating 490nm absorbance prediction using model
+# dye_conc_pred <- predict(fit3_poly,
+#                          newdata = data.frame(wavelength = 490),
+#                          interval = "prediction",
+#                          level = 0.95)
+# 
+# Run1_dyeconc_predictions$dye_conc_lower[i] <- dye_conc_pred[1,2]
+# Run1_dyeconc_predictions$dye_conc_fit[i] <- dye_conc_pred[1,1]
+# Run1_dyeconc_predictions$dye_conc_upper[i] <- dye_conc_pred[1,3]
+
+```
+
+```{r}
+# # Polynomial fits for Sand Run 5 SW_Pre_1
+# 
+# ## Extract Surface Water Pre-Run Sample 1 as X and Y
+# ## Calculate x^2, x^3, x^4 to simplify code
+# x <- sandrun5_fit_datapoints$wavelength
+# y <- sandrun5_fit_datapoints$SW_Pre_1
+# xsq <- x^2
+# xcub <- x^3
+# xquad <- x^4
+# 
+# # Plot points as scatterplot
+# plot(x,y, pch=19, 
+#      main="Absorbance Regression for SW_Pre_1 Sample",  
+#      xlab="Wavelength in nm",
+#      ylab ="Absorbance")
+# 
+# ## Linear fit
+# fit1 <- lm(y~x)
+# anova(fit1)
+# abline(fit1, col="red")
+# 
+# ## Quadratic fit
+# fit2 <-lm(y~x+xsq)
+# anova(fit2)
+# xv<- seq(min(x),max(x),30)
+# yv<- predict(fit2, list(x=xv, xsq= xv^2))
+# lines(xv,yv, col="green")
+# 
+# ## Cubic fit
+# fit3 <- lm(y~x+xsq+xcub)
+# anova(fit3)
+# xv<- seq(min(x),max(x),30)
+# yv<- predict(fit3, list(x=xv, xsq=xv^2, xcub=xv^3))
+# lines(xv, yv, col="blue")
+# 
+# ## 4th order fit
+# fit4 <- lm(y~x+xsq+xcub+xquad)
+# anova(fit4)
+# xv<- seq(min(x),max(x),30)
+# yv<- predict(fit4, list(x=xv, xsq=xv^2, xcub=xv^3, xquad=xv^4))
+# lines(xv, yv, col="orange")
+# 
+# ## Third order fit seems best
+```
+
+```{r}
+# for (i in 1:nrow(Run1_dyeconc_predictions)) {
+#   new_data <- data.frame(exp_ratio = Run1_dyeconc_predictions$exp_ratio[i])
+#   dye_conc_pred <- predict(sand_dye_lm,
+#                            newdata = new_data,
+#                            interval = "prediction")
+#   Run1_dyeconc_predictions$dye_conc_lower[i] <- dye_conc_pred[1,2]
+#   Run1_dyeconc_predictions$dye_conc_fit[i] <- dye_conc_pred[1,1]
+#   Run1_dyeconc_predictions$dye_conc_upper[i] <- dye_conc_pred[1,3]
+# }
+```
+
+
+# Previous brainstorms for TridentDD data analysis
+```{r}
+# Visualization for pre-run porewater samples
+
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$PW_Pre_1,
+#      pch = 19,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='PW pre-run 1')
+# 
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$PW_Pre_2,
+#      pch = 19,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='PW pre-run 2')
+```
+
+```{r}
+# Visualization for flume water samples
+
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$FW_Pre,
+#      pch = 19,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='FW pre-run')
+# 
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$FW_Post,
+#      pch = 19,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='FW post-run')
+```
+
+```{r}
+# Visualization for surface water samples
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$SW_Pre_1,
+#      pch = 1,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='SW Pre-run',
+#      ylim = c(0,0.6))
+# 
+# points(x = run5_data$Wavelength,
+#        y = run5_data$SW_Pre_2,
+#        pch = 1,
+#        col = "red")
+# 
+# points(x = run5_data$Wavelength,
+#        y = run5_data$SW_Pre_3,
+#        pch = 1,
+#        col = "blue")
+# 
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$SW_Post_1,
+#      pch = 1,
+#      xlab='Wavelength (nm)',
+#      ylab='Absorbance',
+#      main='SW Post-run',
+#      ylim = c(0,0.6))
+# 
+# points(x = run5_data$Wavelength,
+#        y = run5_data$SW_Pre_2,
+#        pch = 1,
+#        col = "red")
+# 
+# points(x = run5_data$Wavelength,
+#        y = run5_data$SW_Pre_3,
+#        pch = 1,
+#        col = "blue")
+```
+
+```{r}
+# Attempting to use a self-starting function to fit an exponential curve to PW_pre_1 data
+
+# ### Selecting
+# PW_pre_1_fit_datapoints <- run5_data[,c(1,3)]
+# 
+# PW_pre_1_exp_fit <- nls(PW_Pre_1 ~ SSasymp(Wavelength, yf, y0, log_alpha), data = PW_pre_1_fit_datapoints)
+# 
+# PW_pre_1_exp_fit
+# 
+# qplot(Wavelength, PW_Pre_1, data = augment(PW_pre_1_exp_fit)) +
+#   geom_line(aes(y = .fitted))
+# 
+# ggplot(PW_pre_1_fit_datapoints, 
+#        aes(x=Wavelength, y=PW_Pre_1)) +
+#   geom_point() +
+#   geom_line(y = predict(PW_pre_1_exp_fit,
+#                         PW_pre_1_fit_datapoints)) +
+#   coord_cartesian(xlim = c(400,800),
+#                   ylim = c(0,0.015))
+# 
+# # 0.005567+13.0249*exp(-0.01807613*400)
+# # 0.007420943
+# # Equation: y = yf + (y0-yf) * exp(-exp(log_alpha) * x)
+```
+
+```{r}
+# Attempting to use a self-starting function to fit an exponential curve to PW_pre_2 data
+# PW_pre_2_fit_datapoints <- run5_data[,c(1,8)]
+# 
+# PW_pre_2_exp_fit <- nls(PW_Pre_2 ~ SSasymp(Wavelength, yf, y0, log_alpha), data = PW_pre_2_fit_datapoints)
+# 
+# PW_pre_2_exp_fit
+# 
+# qplot(Wavelength, PW_Pre_2, data = augment(PW_pre_2_exp_fit)) +
+#   geom_line(aes(y = .fitted))
+# 
+# ggplot(PW_pre_2_fit_datapoints, 
+#        aes(x=Wavelength, y=PW_Pre_2)) +
+#   geom_point() +
+#   geom_line(y = predict(PW_pre_2_exp_fit,
+#                         PW_pre_2_fit_datapoints)) +
+#   coord_cartesian(xlim = c(400,800),
+#                   ylim = c(0,0.016))
+```
+
+```{r}
+# # Curve fits for SW: 400, 520, 550, and 580 nm
+# ### We'll build a fitted curve based only on wavelengths that are not elevated by dye
+# 
+# # ### Subset data to only include SW samples and pertinent wavelengths
+# SW_fit_datapoints <- run5_data[c(1,5,6,7),c(1,5,6,7,18,19,20)]
+# 
+# ### Initialize list to store SW curve fits
+# SW_fits <- list()
+# 
+# ### Create curve fits for SW samples, up to 5 degrees
+# SW_fits$SW_pre_1$Deg1 <- lm(SW_Pre_1~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_pre_1$Deg2 <- lm(SW_Pre_1~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_1$Deg3 <- lm(SW_Pre_1~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_1$Deg4 <- lm(SW_Pre_1~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_1$Deg5 <- lm(SW_Pre_1~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+# 
+# SW_fits$SW_pre_2$Deg1 <- lm(SW_Pre_2~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_pre_2$Deg2 <- lm(SW_Pre_2~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_2$Deg3 <- lm(SW_Pre_2~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_2$Deg4 <- lm(SW_Pre_2~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_2$Deg5 <- lm(SW_Pre_2~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+# 
+# SW_fits$SW_pre_3$Deg1 <- lm(SW_Pre_3~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_pre_3$Deg2 <- lm(SW_Pre_3~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_3$Deg3 <- lm(SW_Pre_3~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_3$Deg4 <- lm(SW_Pre_3~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_pre_3$Deg5 <- lm(SW_Pre_3~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+# 
+# SW_fits$SW_post_1$Deg1 <- lm(SW_Post_1~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_post_1$Deg2 <- lm(SW_Post_1~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_1$Deg3 <- lm(SW_Post_1~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_1$Deg4 <- lm(SW_Post_1~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_1$Deg5 <- lm(SW_Post_1~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+# 
+# SW_fits$SW_post_2$Deg1 <- lm(SW_Post_2~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_post_2$Deg2 <- lm(SW_Post_2~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_2$Deg3 <- lm(SW_Post_2~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_2$Deg4 <- lm(SW_Post_2~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_2$Deg5 <- lm(SW_Post_2~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+# 
+# SW_fits$SW_post_3$Deg1 <- lm(SW_Post_3~Wavelength, data=SW_fit_datapoints)
+# SW_fits$SW_post_3$Deg2 <- lm(SW_Post_3~poly(Wavelength,2,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_3$Deg3 <- lm(SW_Post_3~poly(Wavelength,3,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_3$Deg4 <- lm(SW_Post_3~poly(Wavelength,4,raw=T), data=SW_fit_datapoints)
+# SW_fits$SW_post_3$Deg5 <- lm(SW_Post_3~poly(Wavelength,5,raw=T), data=SW_fit_datapoints)
+
+```
+
+```{r}
+# # Graph SW fitted curves
+# 
+# # ### Vector with values of X-axis
+# x_axis <- seq(400,580,10)
+# # 
+# # ### Plot SW_pre_1
+# # plot(x = run5_data$Wavelength,
+# #      y = run5_data$SW_Pre_1,
+# #      pch = 1,
+# #      xlab='Wavelength (nm)',
+# #      ylab='Absorbance',
+# #      main='SW Pre-run',
+# #      ylim = c(0,0.6))
+# # 
+# lines(x = x_axis, 
+#       y = predict(SW_fits$SW_pre_1$Deg1, data.frame(Wavelength=x_axis)), 
+#       col='green')
+# # lines(x_axis, predict(SW_fits$SW_pre_1$Deg2, data.frame(Wavelength=x_axis)), col='purple')
+# # lines(x_axis, predict(SW_fits$SW_pre_1$Deg3, data.frame(Wavelength=x_axis)), col='red')
+```
+
+```{r}
+# Curve fits for FW?
+
+# ### Initialize list to store FW curve fits
+# FW_fits <- list()
+# 
+# ### Create curve fits for FW_pre and FW_post, up to 5 degrees
+# FW_fits$FW_pre_1 <- lm(FW_Pre~Wavelength, data=run5_data)
+# FW_fits$FW_pre_2 <- lm(FW_Pre~poly(Wavelength,2,raw=T), data=run5_data)
+# FW_fits$FW_pre_3 <- lm(FW_Pre~poly(Wavelength,3,raw=T), data=run5_data)
+# FW_fits$FW_pre_4 <- lm(FW_Pre~poly(Wavelength,4,raw=T), data=run5_data)
+# FW_fits$FW_pre_5 <- lm(FW_Pre~poly(Wavelength,5,raw=T), data=run5_data)
+# 
+# FW_fits$FW_post_1 <- lm(FW_Post~Wavelength, data=run5_data)
+# FW_fits$FW_post_2 <- lm(FW_Post~poly(Wavelength,2,raw=T), data=run5_data)
+# FW_fits$FW_post_3 <- lm(FW_Post~poly(Wavelength,3,raw=T), data=run5_data)
+# FW_fits$FW_post_4 <- lm(FW_Post~poly(Wavelength,4,raw=T), data=run5_data)
+# FW_fits$FW_post_5 <- lm(FW_Post~poly(Wavelength,5,raw=T), data=run5_data)
+# 
+# ### Identify which curve fits 
+# for (i in 1:5) {
+#   summary(FW)
+#   
+# }
+```
+
+#### Function using abs at 580nm to predict abs at 490nm due to sediment
+
+```{r}
+# # Determining correlation between PW 490nm and 580nm abs readings
+# 
+# ### Import data, rename columns, make data numeric
+# abs_test_data <- read_excel("TridentDD_data.xlsx",
+#                             sheet = 2)
+# colnames(abs_test_data) <- c("Sample",
+#                              "nm400",
+#                              "nm430",
+#                              "nm460",
+#                              "nm490",
+#                              "nm520",
+#                              "nm550",
+#                              "nm580",
+#                              "nm610")
+# abs_test_data[,2:9] <- sapply(abs_test_data[,2:9], as.numeric)
+```
+
+```{r}
+# ### Conduct correlation test between 460nm and 580nm absorbance readings of porewater samples
+# # CorTest_460_580 <- cor.test(x = abs_test_data$nm460,
+# #          y = abs_test_data$nm580,
+# #          method = "pearson")
+# ### Test results: the two absorbances are strongly correlated
+# 
+# CorTest_490_580 <- cor.test(x = abs_test_data$nm490,
+#          y = abs_test_data$nm580,
+#          method = "pearson")
+# ### Test results: the two absorbances are strongly correlated
+# 
+# 
+# ### Fit a linear model for Abs at 580nm and Abs at 460nm
+# # PW_lm_460_580 <- lm(nm460 ~ nm580,
+# #                     data = abs_test_data)
+# 
+# PW_lm_490_580 <- lm(nm490 ~ nm580,
+#                     data = abs_test_data)
+# 
+# # PW_lm_460_580_0int <- lm(nm460 ~ 0 + nm580,
+# #                     data = abs_test_data)
+# 
+# PW_lm_490_580_0int <- lm(nm490 ~ 0 + nm580,
+#                     data = abs_test_data)
+# 
+# ### Graph 490nm vs 580nm data points and linear model
+# PW_490_580_xaxis <- seq(0,0.8,0.05) 
+# plot(x = abs_test_data$nm580,
+#      y = abs_test_data$nm490,
+#      pch=19,
+#      main = "Sediment in DI, Absorbances at 490nm vs 580nm, nonzero intercept",
+#      xlab = "Abs at 580nm",
+#      ylab = "Abs at 490nm")
+# lines(PW_490_580_xaxis, 
+#       predict(PW_lm_490_580, 
+#               data.frame(nm580 = PW_490_580_xaxis)), 
+#       col='blue')
+# plot(x = abs_test_data$nm580,
+#      y = abs_test_data$nm490,
+#      pch=19,
+#      main = "Sediment in DI, Absorbances at 490nm vs 580nm, zero intercept",
+#      xlab = "Abs at 580nm",
+#      ylab = "Abs at 490nm")
+# lines(PW_490_580_xaxis, 
+#       predict(PW_lm_490_580_0int, 
+#               data.frame(nm580 = PW_490_580_xaxis)), 
+#       col='blue')
+# 
+# ### Coefficients for 490nm vs 580nm linear model
+# sediment490_coeff1 <- as.vector(PW_lm_490_580$coefficients[1])
+# sediment490_coeff2 <- as.vector(PW_lm_490_580$coefficients[2])
+# sediment490_0int_coeff1 <- as.vector(PW_lm_490_580_0int$coefficients[1])
+# 
+# ### Create function of 490nm vs 580nm linear model
+# ### Zero Y-intercept
+# sediment490 <- function(nm580) {
+#   nm490 <- nm580 * sediment490_0int_coeff1
+#   return(nm490)
+# }
+# 
+# ### Function to calculate 490nm standard deviation from 580nm measurement
+# sed490_sd_coeff <- as.vector(sqrt(diag(vcov(PW_lm_490_580_0int)))) * sqrt(21)
+# sed490_sd <- function(nm580) {
+#   nm490 <- nm580 * sed490_sd_coeff
+#   return(nm490)
+# }
+```
+
+```{r}
+# Clean up environment from previous chunk
+
+# rm(abs_test_data)
+# rm(CorTest_460_580)
+# rm(CorTest_490_580)
+# rm(PW_490_580_xaxis)
+# rm(PW_lm_460_580)
+# rm(PW_lm_490_580)
+```
+
+## Function using abs at 490nm to predict dye concentration
+
+```{r}
+# # Determine relationship between dye concentration and abs at 490nm
+# 
+# ### Import data (hard-coding)
+# dye_abs_cor_data <- data.frame(conc = c(0.0002, 0.0004, 0.0006, 0.0008, 0.0010),
+#                                nm460 = c(0.139, 0.271, 0.424, 0.539, 0.696),
+#                                nm490 = c(0.162,0.392,0.756,1.019,1.351))
+# 
+# ### Correlation analysis of 460vs580 and 490vs580
+# # dye_abs_cor_460 <- cor.test(x=dye_abs_cor_data$conc,
+# #                         y=dye_abs_cor_data$nm460,
+# #                         method = "pearson")
+# dye_abs_cor_490 <- cor.test(x=dye_abs_cor_data$conc,
+#                         y=dye_abs_cor_data$nm490,
+#                         method = "pearson")
+# ### Both have a linear relationship.
+# 
+# ### Linear models
+# # dye_abs_lm_460 <- lm(nm460 ~ conc,
+# #                     data = dye_abs_cor_data)
+# dye_abs_lm_490 <- lm(nm490 ~ conc,
+#                     data = dye_abs_cor_data)
+# dye_abs_lm_490_flipped <- lm(conc ~ nm490,
+#                     data = dye_abs_cor_data)
+# 
+# ### Linear models with a 0 intercept
+# # dye_abs_lm_460_0int <- lm(nm460 ~ 0 + conc,
+# #                     data = dye_abs_cor_data)
+# dye_abs_lm_490_0int <- lm(nm490 ~ 0 + conc,
+#                     data = dye_abs_cor_data)
+# dye_abs_lm_490_flipped_0int <- lm(conc ~ 0 + nm490,
+#                     data = dye_abs_cor_data)
+# 
+# 
+# ### Plot 490vs580 with fitted line, nonzero intercept
+# DyeConc_xaxis <- seq(0,0.001,0.0002) 
+# plot(x=dye_abs_cor_data$conc,
+#      y=dye_abs_cor_data$nm490,
+#      pch=19,
+#      xlab="Concentration of dye (v/v)",
+#      ylab="Absorbance (AU)",
+#      main="Absorbance at 490nm at varying dye concentrations, nonzero intercept")
+# lines(DyeConc_xaxis,
+#       predict(dye_abs_lm_490,
+#               data.frame(conc = DyeConc_xaxis)),
+#       col='blue')
+# 
+# ### Plot 490vs580 with fitted line, zero intercept
+# DyeConc_xaxis <- seq(0,0.001,0.0002) 
+# plot(x=dye_abs_cor_data$conc,
+#      y=dye_abs_cor_data$nm490,
+#      pch=19,
+#      xlab="Concentration of dye (v/v)",
+#      ylab="Absorbance (AU)",
+#      main="Absorbance at 490nm at varying dye concentrations, zero intercept")
+# lines(DyeConc_xaxis, 
+#       predict(dye_abs_lm_490_0int, 
+#               data.frame(conc = DyeConc_xaxis)), 
+#       col='blue')
+# 
+# ### Coefficients for converting nm490 to approx dye concentrations
+# dye_from_490_coeff1 <- as.vector(dye_abs_lm_490_flipped$coefficients[1])
+# dye_from_490_coeff2 <- as.vector(dye_abs_lm_490_flipped$coefficients[2])
+# dye_from_490_0int_coeff1 <- as.vector(dye_abs_lm_490_flipped_0int$coefficients[1])
+# 
+# ### Set up function estimating dye conc from 490nm measurement
+# ### Zero Y-intercept
+# dye_from_490 <- function(nm490) {
+#   conc <- nm490 * dye_from_490_0int_coeff1
+#   return(conc)
+# }
+# 
+# dye_from_sd_coeff <- as.vector(sqrt(diag(vcov(dye_abs_lm_490_flipped_0int)))) * sqrt(5)
+# dye_from_sd <- function(nm490) {
+#   conc <- nm490 * dye_from_sd_coeff
+#   return(conc)
+# }
+```
+
+```{r}
+# Clean up environment from previous chunk
+# rm(DyeConc_xaxis)
+# rm(dye_abs_cor_data)
+# rm(dye_abs_cor_460)
+# rm(dye_abs_cor_490)
+# rm(dye_abs_lm_460)
+# rm(dye_abs_lm_490)
+# rm(dye_abs_lm_490_flipped)
+```
+
+```{r}
+# # Import and clean data
+# 
+# ### Working directory, call file
+# setwd("C:/Users/austi/OneDrive/Ecotoxicology Lab/SERDP iTIE/Tracer Dye Experiment")
+# run5_data_t <- read_excel("TridentDD_data.xlsx",
+#                         sheet = 4)
+# 
+# ### Transpose dataset for easier use
+# run5_data <- t(run5_data_t)
+# colnames(run5_data) <- run5_data[1,]
+# run5_data <- run5_data[2:8,]
+# 
+# ### Create vectors of wavelengths and sample names
+# Wavelength <- rownames(run5_data)
+# Wavelength <- as.numeric(Wavelength)
+# Samples <- run5_data_t$Wavelength
+# 
+# ### Add wavelength as column to df
+# run5_data <- cbind(Wavelength, run5_data)
+# 
+# ### Set correct column names
+# colnames(run5_data) <- c("Wavelength", Samples)
+# 
+# ### Convert all to numeric and data frame
+# run5_data <- as.data.frame(run5_data)
+# run5_data <- sapply(run5_data, as.numeric)
+# run5_data <- as.data.frame(run5_data)
+# 
+# ### Rename columns in run5_data_t
+# colnames(run5_data_t) <- c("Wavelength",
+#                            "nm400",
+#                            "nm430",
+#                            "nm460",
+#                            "nm490",
+#                            "nm520",
+#                            "nm550",
+#                            "nm580")
+```
+
+```{r}
+# # Calculate standard surface water dye concentration for Run 4
+# 
+# ### Use sediment490 to estimate absorbance @ 490nm in SW samples due to dye
+# run5_SW_490 <- vector(mode="numeric",length=6)
+# run5_SW_490[1] <- run5_data$SW_Pre_1[4] - sediment490(run5_data$SW_Pre_1[7])
+# run5_SW_490[2] <- run5_data$SW_Pre_2[4] - sediment490(run5_data$SW_Pre_2[7])
+# run5_SW_490[3] <- run5_data$SW_Pre_3[4] - sediment490(run5_data$SW_Pre_3[7])
+# run5_SW_490[4] <- run5_data$SW_Post_1[4] - sediment490(run5_data$SW_Post_1[7])
+# run5_SW_490[5] <- run5_data$SW_Post_2[4] - sediment490(run5_data$SW_Post_2[7])
+# run5_SW_490[6] <- run5_data$SW_Post_3[4] - sediment490(run5_data$SW_Post_3[7])
+# 
+# ### Calculate std.dev for estimated 490nm abs due to dye
+# run5_SW_490_sd_v <- vector(mode="numeric",length=6)
+# run5_SW_490_sd_v[1] <- sed490_sd(run5_data$SW_Pre_1[7])
+# run5_SW_490_sd_v[2] <- sed490_sd(run5_data$SW_Pre_2[7])
+# run5_SW_490_sd_v[3] <- sed490_sd(run5_data$SW_Pre_3[7])
+# run5_SW_490_sd_v[4] <- sed490_sd(run5_data$SW_Post_1[7])
+# run5_SW_490_sd_v[5] <- sed490_sd(run5_data$SW_Post_2[7])
+# run5_SW_490_sd_v[6] <- sed490_sd(run5_data$SW_Post_3[7])
+# 
+# ### Mean estimated 490nm absorbance due to dye in Surface Water
+# run5_SW_490_mean <- mean(run5_SW_490)
+# 
+# ### Std.Dev and CV of estimated 490nm absorbance due to dye in Surface Water
+# run5_SW_490_sd <- sqrt(sum(sapply(run5_SW_490_sd_v, function(x) x^2)) / 6)
+# run5_SW_490_CV <- run5_SW_490_sd/run5_SW_490_mean
+# 
+# ### Use dye_from_490 to estimate dye concentration in SW samples
+# ### Use the function with a zero Y-intercept
+# run5_SWdye_mean <- dye_from_490(run5_SW_490_mean)
+# run5_SWdye_CV <- sqrt((dye_from_sd_coeff/dye_from_490_0int_coeff1)^2 + run5_SW_490_CV^2)
+# run5_SWdye_sd <- run5_SWdye_CV * run5_SWdye_mean
+
+```
+
+```{r}
+# # Calculate approx dye concentrations in all samples
+# 
+# ### Initialize new column in run5_data_t storing est. dye concentrations
+# run5_data_t <- cbind(run5_data_t,
+#                      est_dye_mean = NA,
+#                      est_dye_sd = NA,
+#                      est_dye_CV = NA)
+# 
+# ### Calculate estimated and sd dye concentrations in all samples
+# for (i in 1:nrow(run5_data_t)) {
+#   est_dye_490_mean <- run5_data_t$nm490[i] - sediment490(run5_data_t$nm580[i])
+#   est_dye_490_sd <- sed490_sd(run5_data_t$nm580[i])
+#   est_dye_490_CV <- est_dye_490_sd / est_dye_490_mean
+#   est_dye_conc_mean <- dye_from_490(est_dye_490_mean)
+#   est_dye_conc_CV <- sqrt((dye_from_sd_coeff/dye_from_490_0int_coeff1)^2 + est_dye_490_CV^2)
+#   est_dye_conc_sd <- est_dye_conc_CV * est_dye_conc_mean
+#   run5_data_t$est_dye_mean[i] <- est_dye_conc_mean
+#   run5_data_t$est_dye_sd[i] <- est_dye_conc_sd
+#   run5_data_t$est_dye_CV[i] <- est_dye_conc_CV
+# }
+```
+
+```{r}
+# # Use relative concentrations to estimate % drawdown
+# run5_data_t <- cbind(run5_data_t,
+#                      perc_DD_mean = NA,
+#                      perc_DD_sd = NA,
+#                      perc_DD_CV = NA)
+# 
+# for (i in 1:nrow(run5_data_t)) {
+#   run5_data_t$perc_DD_mean[i] <- run5_data_t$est_dye_mean[i]*100/run5_SWdye_mean
+#   run5_data_t$perc_DD_CV[i] <- sqrt(run5_data_t$est_dye_CV[i]^2 + run5_SWdye_CV^2)
+#   run5_data_t$perc_DD_sd[i] <- run5_data_t$perc_DD_CV[i]*run5_data_t$perc_DD_mean[i]
+# }
+```
+
+```{r}
+# # Import and clean data
+# 
+# ### Working directory, call file
+# setwd("C:/Users/austi/OneDrive/Ecotoxicology Lab/SERDP iTIE/Tracer Dye Experiment")
+# run5_data_t <- read_excel("TridentDD_data.xlsx",
+#                         sheet = 5)
+# 
+# ### Transpose dataset for easier use
+# run5_data <- t(run5_data_t)
+# colnames(run5_data) <- run5_data[1,]
+# run5_data <- run5_data[2:8,]
+# 
+# ### Create vectors of wavelengths and sample names
+# Wavelength <- rownames(run5_data)
+# Wavelength <- as.numeric(Wavelength)
+# Samples <- run5_data_t$Wavelength
+# 
+# ### Add wavelength as column to df
+# run5_data <- cbind(Wavelength, run5_data)
+# 
+# ### Set correct column names
+# colnames(run5_data) <- c("Wavelength", Samples)
+# 
+# ### Convert all to numeric and data frame
+# run5_data <- as.data.frame(run5_data)
+# run5_data <- sapply(run5_data, as.numeric)
+# run5_data <- as.data.frame(run5_data)
+# 
+# ### Rename columns in run5_data_t
+# colnames(run5_data_t) <- c("Wavelength",
+#                            "nm400",
+#                            "nm430",
+#                            "nm460",
+#                            "nm490",
+#                            "nm520",
+#                            "nm550",
+#                            "nm580")
+```
+
+```{r}
+# # Calculate standard surface water dye concentration for Run 4
+# 
+# ### Use sediment490 to estimate absorbance @ 490nm in SW samples due to dye
+# run5_SW_490 <- vector(mode="numeric",length=6)
+# run5_SW_490[1] <- run5_data$SW_Pre_1[4] - sediment490(run5_data$SW_Pre_1[7])
+# run5_SW_490[2] <- run5_data$SW_Pre_2[4] - sediment490(run5_data$SW_Pre_2[7])
+# run5_SW_490[3] <- run5_data$SW_Pre_3[4] - sediment490(run5_data$SW_Pre_3[7])
+# run5_SW_490[4] <- run5_data$SW_Post_1[4] - sediment490(run5_data$SW_Post_1[7])
+# run5_SW_490[5] <- run5_data$SW_Post_2[4] - sediment490(run5_data$SW_Post_2[7])
+# run5_SW_490[6] <- run5_data$SW_Post_3[4] - sediment490(run5_data$SW_Post_3[7])
+# 
+# ### Calculate std.dev for estimated 490nm abs due to dye
+# run5_SW_490_sd_v <- vector(mode="numeric",length=6)
+# run5_SW_490_sd_v[1] <- sed490_sd(run5_data$SW_Pre_1[7])
+# run5_SW_490_sd_v[2] <- sed490_sd(run5_data$SW_Pre_2[7])
+# run5_SW_490_sd_v[3] <- sed490_sd(run5_data$SW_Pre_3[7])
+# run5_SW_490_sd_v[4] <- sed490_sd(run5_data$SW_Post_1[7])
+# run5_SW_490_sd_v[5] <- sed490_sd(run5_data$SW_Post_2[7])
+# run5_SW_490_sd_v[6] <- sed490_sd(run5_data$SW_Post_3[7])
+# 
+# ### Mean estimated 490nm absorbance due to dye in Surface Water
+# run5_SW_490_mean <- mean(run5_SW_490)
+# 
+# ### Std.Dev and CV of estimated 490nm absorbance due to dye in Surface Water
+# run5_SW_490_sd <- sqrt(sum(sapply(run5_SW_490_sd_v, function(x) x^2)) / 6)
+# run5_SW_490_CV <- run5_SW_490_sd/run5_SW_490_mean
+# 
+# ### Use dye_from_490 to estimate dye concentration in SW samples
+# ### Use the function with a zero Y-intercept
+# run5_SWdye_mean <- dye_from_490(run5_SW_490_mean)
+# run5_SWdye_CV <- sqrt((dye_from_sd_coeff/dye_from_490_0int_coeff1)^2 + run5_SW_490_CV^2)
+# run5_SWdye_sd <- run5_SWdye_CV * run5_SWdye_mean
+
+```
+
+```{r}
+# # Calculate approx dye concentrations in all samples
+# 
+# ### Initialize new column in run5_data_t storing est. dye concentrations
+# run5_data_t <- cbind(run5_data_t,
+#                      est_dye_mean = NA,
+#                      est_dye_sd = NA,
+#                      est_dye_CV = NA)
+# 
+# ### Calculate estimated and sd dye concentrations in all samples
+# for (i in 1:nrow(run5_data_t)) {
+#   est_dye_490_mean <- run5_data_t$nm490[i] - sediment490(run5_data_t$nm580[i])
+#   est_dye_490_sd <- sed490_sd(run5_data_t$nm580[i])
+#   est_dye_490_CV <- est_dye_490_sd / est_dye_490_mean
+#   est_dye_conc_mean <- dye_from_490(est_dye_490_mean)
+#   est_dye_conc_CV <- sqrt((dye_from_sd_coeff/dye_from_490_0int_coeff1)^2 + est_dye_490_CV^2)
+#   est_dye_conc_sd <- est_dye_conc_CV * est_dye_conc_mean
+#   run5_data_t$est_dye_mean[i] <- est_dye_conc_mean
+#   run5_data_t$est_dye_sd[i] <- est_dye_conc_sd
+#   run5_data_t$est_dye_CV[i] <- est_dye_conc_CV
+# }
+```
+
+```{r}
+# # Use relative concentrations to estimate % drawdown
+# run5_data_t <- cbind(run5_data_t,
+#                      perc_DD_mean = NA,
+#                      perc_DD_sd = NA,
+#                      perc_DD_CV = NA)
+# 
+# for (i in 1:nrow(run5_data_t)) {
+#   run5_data_t$perc_DD_mean[i] <- run5_data_t$est_dye_mean[i]*100/run5_SWdye_mean
+#   run5_data_t$perc_DD_CV[i] <- sqrt(run5_data_t$est_dye_CV[i]^2 + run5_SWdye_CV^2)
+#   run5_data_t$perc_DD_sd[i] <- run5_data_t$perc_DD_CV[i]*run5_data_t$perc_DD_mean[i]
+# }
+```
+
+```{r}
+# # Plots to visualize 
+# 
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$"16H",
+#      pch=19)
+# 
+# plot(x = run5_data$Wavelength,
+#      y = run5_data$"24H",
+#      pch=19)
+```
+
+```{r}
+# for (i in 1:nrow(Run1_dyeconc_predictions)) {
+#   new_data <- data.frame(exp_ratio = Run1_dyeconc_predictions$exp_ratio[i])
+#   dye_conc_pred <- predict(sand_dye_lm,
+#                            newdata = new_data,
+#                            interval = "prediction")
+#   Run1_dyeconc_predictions$dye_conc_lower[i] <- dye_conc_pred[1,2]
+#   Run1_dyeconc_predictions$dye_conc_fit[i] <- dye_conc_pred[1,1]
+#   Run1_dyeconc_predictions$dye_conc_upper[i] <- dye_conc_pred[1,3]
+# }
+```
