@@ -10,10 +10,14 @@ getwd()
 ```
 
 ```{r}
-#Working Directory Filepaths
-#"C:/Users/austi/OneDrive/Ecotoxicology Lab/SERDP iTIE/Trident Drawdown/tridentdrawdown"
-#"C:/Users/16163/Desktop/GitHub" 
+# Working Directory Filepaths
 
+# Aiden: "C:/Users/aiden/OneDrive/Desktop/Burton Lab Github"
+# Austin: "C:/Users/austi/OneDrive/Ecotoxicology Lab/SERDP iTIE/Trident Drawdown/tridentdrawdown"
+# Grace: "/Users/gracethompson/Desktop/burton lab"
+# Meg: "C:/Users/16163/Desktop/GitHub" 
+# Seth: "C:/Users/seth/Desktop/Folders/Burton Lab/tridentdrawdown"
+# Theo: "/Users/theomao/Desktop/Burton"
 ```
 
 ```{r}
